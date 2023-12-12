@@ -1,0 +1,15 @@
+name: resnet-18
+channels:
+  - conda-forge
+  - pytorch
+  - defaults
+  - nvidia
+dependencies:
+  - python
+  - pytorch
+  - torchvision
+  - cudnn
+  - torchaudio
+  - matplotlib
+  - pandas
+  - scikit-learn
