@@ -1,0 +1,17 @@
+name: efficient
+channels:
+  - defaults
+  - conda-forge
+  - pytorch
+  - nvidia
+dependencies:
+  - python=3.9
+  - pandas
+  - opencv
+  - pytorch==1.13.1
+  - torchvision==0.14.1
+  - torchaudio==0.13.1
+  - pytorch-cuda=11.7
+  - albumentations
+  - scikit-learn
+  - tqdm
