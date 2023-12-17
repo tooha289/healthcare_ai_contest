@@ -6,6 +6,9 @@ import numpy as np
 import cv2
 from tensorflow.python.client import device_lib
 from tensorflow.keras.optimizers import Adam
+
+file_path = './archive'
+
 gpu_available = any(device.device_type == 'GPU' for device in device_lib.list_local_devices())
 
 print(device_lib.list_local_devices())
@@ -27,6 +30,24 @@ if gpus:
 gpu_available = any(device.device_type == 'GPU' for device in device_lib.list_local_devices())
 print("GPU Available:", gpu_available)
 
+from tensorflow.keras import backend as K
+
+def recall_m(y_true, y_pred):
+    true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
+    possible_positives = K.sum(K.round(K.clip(y_true, 0, 1)))
+    recall = true_positives / (possible_positives + K.epsilon())
+    return recall
+
+def precision_m(y_true, y_pred):
+    true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
+    predicted_positives = K.sum(K.round(K.clip(y_pred, 0, 1)))
+    precision = true_positives / (predicted_positives + K.epsilon())
+    return precision
+
+def f1_m(y_true, y_pred):
+    precision = precision_m(y_true, y_pred)
+    recall = recall_m(y_true, y_pred)
+    return 2*((precision*recall)/(precision+recall+K.epsilon()))
 '''
 < ResNet Architecture>
 - ResNet "50"-layer
@@ -196,51 +217,101 @@ def ResNet(x):
 
 # Dataset (Kaggle Cat and Dog Dataset)
 train_data_generator = ImageDataGenerator(rescale=1. / 255)
-train_dataset = train_data_generator.flow_from_directory('Cat_Dog_Dataset/train_set',
+train_dataset = train_data_generator.flow_from_directory(f'{file_path}/train_data',
                                                          shuffle=True,
                                                          target_size=(224, 224),
                                                          batch_size=32,
                                                          class_mode='binary')
 
 valid_data_generator = ImageDataGenerator(rescale=1. / 255)
-valid_dataset = valid_data_generator.flow_from_directory('Cat_Dog_Dataset/test_set',
+valid_dataset = valid_data_generator.flow_from_directory(f'{file_path}/test_data',
                                                          shuffle=True,
                                                          target_size=(224, 224),
                                                          batch_size=32,
                                                          class_mode='binary')
 
-
-
 input_shape = layers.Input(shape=(224, 224, 3), dtype='float32', name='input')
 # Train
 model = tf.keras.Model(input_shape, ResNet(input_shape))
-# model.compile(optimizer=tf.keras.optimizers.SGD(learning_rate=0.001, momentum=0.9),
-#                   loss='categorical_crossentropy',
-#                   metrics=['acc'])
+#########################################################################################################
+#하이퍼파라미터 튜닝으로 아래 내용 주석처리
+#########################################################################################################
+# # Adam 옵티마이저 생성
+# optimizer = Adam(learning_rate=0.001)  # 여기서 learning_rate를 설정
 
-# Adam 옵티마이저 생성
-optimizer = Adam(learning_rate=0.001)  # 여기서 learning_rate를 설정
+# # 모델 컴파일
+# model.compile(optimizer=optimizer, loss='sparse_categorical_crossentropy', metrics=["accuracy", f1_m])
 
-# 모델 컴파일
-model.compile(optimizer=optimizer, loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+# model.summary()
+# # Include the epoch in the file name (uses `str.format`)
+# checkpoint_path = "ckpts/cp-{epoch:04d}.ckpt"
+# checkpoint_dir = os.path.dirname(checkpoint_path)
 
-model.summary()
+# batch_size = 211
 
-# Include the epoch in the file name (uses `str.format`)
-checkpoint_path = "ckpts/cp-{epoch:04d}.ckpt"
-checkpoint_dir = os.path.dirname(checkpoint_path)
-
-batch_size = 211
-
-# Create a callback that saves the model's weights every 5 epochs
-cp_callback = tf.keras.callbacks.ModelCheckpoint(
-    filepath=checkpoint_path, 
-    verbose=1, 
-    save_weights_only=True,
-    save_freq=batch_size)
+# # Create a callback that saves the model's weights every 5 epochs
+# cp_callback = tf.keras.callbacks.ModelCheckpoint(
+#     filepath=checkpoint_path,
+#     verbose=1,
+#     save_weights_only=True,
+#     save_freq=batch_size)
 
 
-# Save the weights using the `checkpoint_path` format
-model.save_weights(checkpoint_path.format(epoch=0))
+# # Save the weights using the `checkpoint_path` format
+# model.save_weights(checkpoint_path.format(epoch=0))
 
-train = model.fit(train_dataset, epochs=5, callbacks=[cp_callback], validation_data=valid_dataset)
+# train = model.fit(train_dataset, epochs=5, callbacks=[cp_callback], validation_data=valid_dataset)
+
+#########################################################################################################
+#하이퍼파라미터 튜닝
+#########################################################################################################
+# Define the objective function for Optuna optimization
+import optuna
+from tensorflow.keras.optimizers import Adam, Nadam, Adamax
+
+# Define the objective function for Optuna optimization
+def objective(trial):
+    # Define the hyperparameters to be tuned
+    learning_rate = trial.suggest_discrete_uniform('learning_rate', 1e-5, 1e-2, 2)
+    optimizer_name = trial.suggest_categorical('optimizer', ['adam', 'nadam'])
+
+    # Choose the optimizer based on the optimizer_name
+    if optimizer_name == 'adam':
+        optimizer = Adam(learning_rate=learning_rate)
+    elif optimizer_name == 'adamax':
+        optimizer = Adamax(learning_rate=learning_rate)
+    elif optimizer_name == 'nadam':
+        optimizer = Nadam(learning_rate=learning_rate)
+
+    # 모델 컴파일
+    model.compile(optimizer=optimizer, loss='sparse_categorical_crossentropy', metrics=["accuracy", f1_m])
+
+    # Include the epoch in the file name (uses `str.format`)
+    checkpoint_path = "ckpts/cp-{epoch:04d}.ckpt"
+    checkpoint_dir = os.path.dirname(checkpoint_path)
+
+    batch_size = 211
+
+    # Create a callback that saves the model's weights every 5 epochs
+    cp_callback = tf.keras.callbacks.ModelCheckpoint(
+        filepath=checkpoint_path,
+        verbose=1,
+        save_weights_only=True,
+        save_freq=batch_size)
+
+    # Save the weights using the `checkpoint_path` format
+    model.save_weights(checkpoint_path.format(epoch=0))
+
+    # Train the model with the current hyperparameters
+    train_history = model.fit(train_dataset, epochs=5, callbacks=[cp_callback], validation_data=valid_dataset)
+
+    # Return the validation accuracy as the objective value to be maximized
+    return train_history.history['val_accuracy'][-1]
+
+# Run Optuna optimization
+study = optuna.create_study(direction='maximize')  # We want to maximize validation accuracy
+study.optimize(objective, n_trials=4)  # You can adjust the number of trials
+
+# Get the best hyperparameters
+best_params = study.best_params
+print("Best Hyperparameters:", best_params)

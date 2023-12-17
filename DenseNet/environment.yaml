@@ -1,0 +1,10 @@
+name: densenet
+channels:
+  - conda-forge  
+dependencies:
+  - python=3.7.11
+  - tensorflow=2.6.0
+  - tensorflow-gpu=2.6.0
+  - opencv=4.5.1
+  - Pillow
+  - optuna

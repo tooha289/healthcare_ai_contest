@@ -47,7 +47,7 @@ def seed_everything(seed):
 
 seed_everything(CFG['SEED']) # Seed 고정
 
-all_img_list = glob.glob('./train/*/*')
+all_img_list = glob.glob('../../Dataset/train_data/*/*')
 
 df = pd.DataFrame(columns=['img_path', 'label'])
 df['img_path'] = all_img_list
@@ -139,6 +139,11 @@ def validation(model, criterion, val_loader, device):
     
     return _val_loss, _val_score
 
+def save_network(network, epoch_label):
+    save_filename = 'model_%s.pth' % epoch_label
+    save_path = os.path.join('./saved_models', save_filename)
+    torch.save(network.state_dict(), save_path)
+
 def train(model, optimizer, train_loader, val_loader, scheduler, device):
     model.to(device)
     criterion = nn.CrossEntropyLoss().to(device)
@@ -173,6 +178,9 @@ def train(model, optimizer, train_loader, val_loader, scheduler, device):
         if best_score < _val_score:
             best_score = _val_score
             best_model = model
+
+        if epoch%2 == 1:
+            save_network(model, epoch)
     
     return best_model
     
